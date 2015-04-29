@@ -1,1 +1,120 @@
 Draft1.txt
+Porting OpenFOAM to Xeon-PHI and Hybrid Parallelization Perfromance analysis 
+
+Porting OpenFOAM to Intel Xeon-Phi
+ 
+Followed the procedure on
+http://www.cfd-online.com/Forums/openfoam-installation/118552-openfoam-build-intel-xeon-phi.html
+ 
+This is also a very good resource for building OpenFOAM for the Intel Xeon-Phis
+http://machls.cc.oita-u.ac.jp/kenkyu/ryuki/wpjp/openfoam-v2-3-0-on-xeon-phi
+
+Steps to port OpenFOAM to the MIC 
+1. Make Zlib and Flex for MIC also build the flex library for the host xeon processors as well.(2.5.39) ipccnodes have flex-2.5.37 
+2. Set OpenFOAM bashrc/setting.sh to linux64Icc and INTEL MPI 
+3. Make wmake only (wmake/src - make clean && make because wmake is executed on host)
+4. Add -mmic to wmake/rules/linux64ICC/{c, c++} and in file etc/config/settings.sh under x86-64 bit architecture  change the compilers to mpiicc for CC and mpiicpc for CXX. Also add -mmic to the CFLAGS and CXXFLAGS. use mpiicpc for the whole build
+5. add Zlib/Flex path to Make/options
+6. Compile OpenFOAM libraries. ( you might get errors like flex , zlib not flound even after ading the paths, you might have to copy the .so files for these from their lib/ to the specific lnInclude/ )
+7. Compile solver applications. You'll get many undefined function errors. add -Wl,rpath-link flag for appropriate library's path.
+ 
+Solvers ported
+1.     icoFoam
+2.     simpleFoam
+ 
+To run the solvers on the Phis:
+ Login to any of the ipccnodes from Janus login nodes.
+ Open two terminals in the same node.
+ 
+Terminal 1
+Terminal 2
+In terminal one for Host Xeon node:
+ Load the following modules:
+Module purge
+Module load intel/impi-15.0.1
+Module load gcc/gcc-4.9.2
+ Export MPI_ROOT=$I_MPI_ROOT 
+Echo $I_MPI_ROOT
+/curc/tools/x_86_64/rh6/intel/15.0.1/impi/5.0.2.044 
+ Now soucrce the  host build of OpenFOAM from “/lustre/janus_scratch/deva3654/spring2015/Deepthi/openfoam/openfoam-simd”
+ Source /lustre/janus_scratch/deva3654/spring2015/Deepthi/openfoam/openfoam-simd/OpenFOAM-2.3.0/etc/bashrc
+ Go to the icoFoam cavity case directory,
+Run blockMesh and create the mesh .
+Then run decomposePar –cellDist –force and split it into the number of required subdomains
+Then run icoFoam solver from the Phis.
+Then use reconstructPar on the xeon-processor.
+In terminal two for the Xeon-Phis:
+Ssh into the mic
+Export MPI_ROOT= /curc/tools/x_86_64/rh6/intel/15.0.1/impi/5.0.2.044/mic
+Source the mic build on the mic
+Source /lustre/janus_scratch/deva3654/spring2015/Deepthi/Phi/Openfoam-Xeon-host/OpenFOAM-2.3.1/etc/bashrc
+ After splitting the mesh from the xeon-processor, run icoFoam on the Phis.
+ Mpirun –n <n> icoFoam –parallel.
+Then use reconstructPar on the xeon-processor.
+ 
+
+PATHS (for running on the MIC)
+
+I_MPI_MIC_SRC
+/curc/tools/x_86_64/rh6/intel/15.0.1/impi_5.0.2/mic
+MPI_FULL_PHI_PATH
+/curc/tools/x_86_64/rh6/intel/15.0.1/impi_5.0.2/mic/lib:/curc/tools/x_86_64/rh6/intel/15.0.1/impi_5.0.2/mic/bin:/curc/tools/x_86_64/rh6/intel/15.0.1/composer_xe_2015.1.133/compiler/lib/mic:/curc/tools/x_86_64/rh6/intel/15.0.1/composer_xe_2015.1.133/compiler/include/mic:/lustre/janus_scratch/deva3654/spring2015/Deepthi/Phi/Openfoam-Xeon-host/OpenFOAM-2.3.1/etc 
+FLEX_PHI_PATH
+/lustre/janus_scratch/deva3654/spring2015/Deepthi/Phi/Openfoam-Xeon-host/flex-mic/lib:/lustre/janus_scratch/deva3654/spring2015/Deepthi/Phi/Openfoam-Xeon-host/flex-mic/include
+ZLIB_PHI_PATH
+/lustre/janus_scratch/deva3654/spring2015/Deepthi/Phi/Openfoam-Xeon-host/zlib-mic/lib:/lustre/janus_scratch/deva3654/spring2015/Deepthi/Phi/Openfoam-Xeon-host/zlib-mic/include
+FLEX_XEON_PATH
+/lustre/janus_scratch/deva3654/spring2015/Deepthi/Phi/Openfoam-Xeon-host/flex-host/lib:/lustre/janus_scratch/deva3654/spring2015/Deepthi/Phi/Openfoam-Xeon-host/flex-host/include
+OPENFOAM_PHI_PATH
+/lustre/janus_scratch/deva3654/spring2015/Deepthi/Phi/Openfoam-Xeon-host/OpenFOAM-2.3.1/etc:/lustre/janus_scratch/deva3654/spring2015/Deepthi/Phi/Openfoam-Xeon-host/OpenFOAM-2.3.1/platforms/linux64IccDPOpt/lib:/lustre/janus_scratch/deva3654/spring2015/Deepthi/Phi/Openfoam-Xeon-host/OpenFOAM-2.3.1/platforms/linux64IccDPOpt/bin:/lustre/janus_scratch/deva3654/spring2015/Deepthi/Phi/Openfoam-Xeon-host/OpenFOAM-2.3.1/etc
+
+path_lustre_phi_build=$MPI_FULL_PHI_PATH:$OPENFOAM_PHI_PATH:$ZLIB_PHI_PATH
+LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$path_lustre_phi_build
+PATH=$PATH:$path_lustre_phi_build 
+
+MPI only implementation of OpenFOAM 
+
+
+
+
+The Peak node ratio of the Host node to the Xeon-Phi card using only the physical cores and using the logical cores :
+
+16 host cores : 60 Phi cores
+0.342376
+32 host cores : 240 Phi cores
+0.4412620214
+
+The slight improvement in the full node ratio when all the logical cores are being is used is not because of an increase in the performance of the Phi cores, it is due to a reduction in the performance of the host node when all the logical cores are being used. 
+
+
+IcoFOAM solver on Xeon-Phi:
+As you can see using 120/180 tasks gives better performance. 
+
+“The core is a 2-wide processor meaning it can execute two instructions per cycle, one on U-pipe and the other on V-pipe. It also contains an x87 unit to perform floating point instructions when needed.” 
+ from : https://software.intel.com/en-us/articles/intel-xeon-phi-core-micro-architecture
+
+Single core Performance XEon Processor vs Xeon-Phi Coprocessor:
+Host : 4495.92
+Mic: 57293.9
+Single core Ratio : 12.7435319133792
+
+32 tasks:
+32 host : 32 Phi = 0.2648
+
+Best  Ratio:
+16 host : 120 Phi = 0.43171104842951 
+
+Performance of 60 MPI tasks with 2 OMP threads ~ 60 pure MPI tasks 
+
+
+Profiled IcoFOAM on the Xeon-Phis =  hotspots almost the same. not much difference compared to the host.
+
+Vectorization: Either there is 0 vectorization or the code is 100 % vectorized. 
+
+for very small problem sizes a lot of time is spent in file I/O 
+function:  runTime.write(); 
+
+Threading with OpenMP :
+
+Threading with openMP doesn’t really seem to help. 
+Also changing the thread affinity also doesn't seem to help in the case of OpenFOAM. 
